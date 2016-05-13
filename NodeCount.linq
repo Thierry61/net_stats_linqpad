@@ -13,7 +13,7 @@
 // Max distance is the metric that, when divided by the proximity group size,
 // seems to have the best average and the lowest standard deviation.
 // (and min distance is the worst metric).
-// Then I discovered empirically that the following formula gives a very good approximation
+// Then I discovered empirically that the following formula gives an approximation
 // of the the total number of nodes:
 // max_value / (max_distance / proximity_count)
 // Intuitivelly:
@@ -24,6 +24,9 @@
 // - the universe having a homogeneous density, the number of nodes is proportional to the radius
 //   (well, that's the hard part to swallow: this universe is not in 3D but linear: the addresses
 //   are points on a line, or maybe a circle)
+
+// The approximation seems to be improved when a fraction of the measured standard deviation is subtracted
+// from the max distance (for example: mean max distance - 0.3 * standard deviation
 
 IEnumerable<int> GenerateLogSamples(int min, int max, int numbers)
 {
@@ -46,15 +49,15 @@ IEnumerable<int> GenerateLinearSamples(int min, int max, int numbers)
 void Main()
 {
 	int byteSize = 64;
-	int proximityCount = 64;
+	int groupSize = 8;
 
 	int minNodes = 1000;
 	int maxNodes = 100000;
 	int stepNodes = 7;
 
-	int minSamples = 1;
-	int maxSamples = 41;
-	int stepSamples = 6;
+	int minSamples = 12;
+	int maxSamples = 48;
+	int stepSamples = 4;
 
 	// One supplementary byte to handle a max value with all bits set to 1
 	BigInteger maxValue = new BigInteger(Enumerable.Range(0, byteSize + 1).Select(i => (byte)(i == byteSize ? 0 : 0xFF)).ToArray());
@@ -71,29 +74,36 @@ void Main()
 	}).ToArray();
 
 	// From minSamples to maxSamples measuring nodes
-	foreach (int sampleCount in GenerateLogSamples(minSamples, maxSamples, stepSamples))
+	foreach (int sampleCount in GenerateLinearSamples(minSamples, maxSamples, stepSamples))
 	{
 		// Configurations having from minNodes to maxNodes nodes
 		GenerateLogSamples(minNodes, maxNodes, stepNodes).Select(nodeCount =>
 		{
-			BigInteger[] proximityGroups = nodes.Take(sampleCount).Select(n1 => nodes.Where(n2 => n1 != n2)
-					.Take(nodeCount).Select(n2 => n1 ^ n2).OrderBy(d => d)
-					.Take(proximityCount - 1).Max())
+			double[] groups = nodes.Take(sampleCount).Select(n1 =>
+				{
+					BigInteger max = nodes.Where(n2 => n1 != n2)
+						.Take(nodeCount - 1).Select(n2 => n1 ^ n2).OrderBy(d => d)
+						.ElementAt(groupSize - 1);
+					return (double)(maxValue / (max / groupSize));
+				})
 				.ToArray();
-			BigInteger max = proximityGroups.Aggregate(BigInteger.Zero, (acc, d) => acc + d) / sampleCount;
-//			double variance = (double) proximityGroups.Aggregate(BigInteger.Zero, (acc, d) => acc + (max - d) * (max - d)) / sampleCount;
-//			double standardDeviationPercentage = Math.Sqrt(variance)/(double)max*100;
-			double estimatedNodeCount = (double) (maxValue / (max / proximityCount));
+			double estimatedNodeCount = groups.Aggregate(0.0, (acc, d) => acc + d) / sampleCount;
+			double variance = groups.Aggregate(0.0, (acc, d) => acc + (d - estimatedNodeCount) * (d - estimatedNodeCount)) / sampleCount;
+			double standardDeviation = Math.Sqrt(variance);
 			double errorPercentage = ((estimatedNodeCount - nodeCount) * 100 / nodeCount);
+			double estimatedNodeCount2 = estimatedNodeCount - 0.3 * standardDeviation;
+			double errorPercentage2 = ((estimatedNodeCount2 - nodeCount) * 100 / nodeCount);
 			return new
 			{
 				RealNodeCount = nodeCount.ToString("N0").PadLeft(7),
 				EstimatedNodeCount = estimatedNodeCount.ToString("N0").PadLeft(7),
 				ErrorPercentage = errorPercentage.ToString("N2").PadLeft(6),
-//				StandardDeviationPercentage = standardDeviationPercentage.ToString("N2").PadLeft(6),
+				StandardDeviation = standardDeviation.ToString("N0").PadLeft(6),
+				EstimatedNodeCount2 = estimatedNodeCount2.ToString("N0").PadLeft(7),
+				ErrorPercentage2 = errorPercentage2.ToString("N2").PadLeft(6),
 			};
-		}).Dump(string.Format("BitSize: {0}, ProximityCount: {1}, SampleCount: {2}",
-	 		byteSize * 8, proximityCount, sampleCount));
+		}).Dump(string.Format("BitSize: {0}, GroupSize: {1}, SampleCount: {2}",
+			byteSize * 8, groupSize, sampleCount));
 	}
 }
 

@@ -73,11 +73,16 @@ void Main()
 		return new BigInteger(bytes);
 	}).ToArray();
 
+	// Summary results
+	double[,] errorPercentageArray = new double[stepNodes,stepSamples];
+
 	// From minSamples to maxSamples measuring nodes
+	int j = 0;
 	foreach (int sampleCount in GenerateLinearSamples(minSamples, maxSamples, stepSamples))
 	{
 		// Configurations having from minNodes to maxNodes nodes
-		GenerateLogSamples(minNodes, maxNodes, stepNodes).Select(nodeCount =>
+		int i = 0;
+		GenerateLogSamples(minNodes, maxNodes, stepNodes).Where(nodeCount => nodeCount >= sampleCount).Select(nodeCount =>
 		{
 			double[] groups = nodes.Take(sampleCount).Select(n1 =>
 				{
@@ -93,6 +98,8 @@ void Main()
 			double errorPercentage = ((estimatedNodeCount - nodeCount) * 100 / nodeCount);
 			double estimatedNodeCount2 = estimatedNodeCount - 0.3 * standardDeviation;
 			double errorPercentage2 = ((estimatedNodeCount2 - nodeCount) * 100 / nodeCount);
+			errorPercentageArray[i, j] = errorPercentage2;
+			i++;
 			return new
 			{
 				RealNodeCount = nodeCount.ToString("N0").PadLeft(7),
@@ -104,7 +111,24 @@ void Main()
 			};
 		}).Dump(string.Format("BitSize: {0}, GroupSize: {1}, SampleCount: {2}",
 			byteSize * 8, groupSize, sampleCount));
+		j++;
+	}
+
+	Console.Write("| Network ");
+	foreach (int sampleCount in GenerateLinearSamples(minSamples, maxSamples, stepSamples))
+		Console.Write(string.Format("|{0} nodes ", sampleCount.ToString("D").PadLeft(3)));
+	Console.WriteLine("|");
+	Console.Write("|---------");
+	foreach (int sampleCount in GenerateLinearSamples(minSamples, maxSamples, stepSamples))
+		Console.Write(string.Format("|----------", sampleCount.ToString("D").PadLeft(3)));
+	Console.WriteLine("|");
+	int k = 0;
+	foreach (int nodeCount in GenerateLogSamples(minNodes, maxNodes, stepNodes))
+	{
+		Console.Write(string.Format("|{0} ", nodeCount.ToString("N0").PadLeft(8)));
+		for (int i = 0; i < stepSamples; i++)
+			Console.Write(string.Format("|{0} % ", errorPercentageArray[k, i].ToString("N2").PadLeft(7)));
+		Console.WriteLine("|");
+		k++;
 	}
 }
-
-// Define other methods and classes here
